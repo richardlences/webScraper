@@ -1,21 +1,22 @@
 import axios from "axios";
 import { load } from "cheerio";
-import { Client } from "pg";
-import { readFileSync, appendFileSync } from "fs";
-import "dotenv/config";
+import { readFileSync, appendFileSync, writeFileSync } from "fs";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
 
 type Product = {
-    Name: String,
-    Price: Number,
-    Type: String,
+    Name: string,
+    Price: number,
+    Type: string,
 }
 
-const client = new Client();
-
 async function main() {
-    const file = readFileSync("urlsWithPage.txt", "utf-8").split("\n");
+    const file = readFileSync("using.txt", "utf-8").split("\n").filter(url => url !== "");
+    const num = parseInt(process.argv[2]);
+    const threads = parseInt(process.argv[3]);
     const products: Product[] = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = num; i < file.length; i += threads) {
         try {
             const site = file[i];
             const $ = load((await axios.get(site)).data);
@@ -32,22 +33,27 @@ async function main() {
                 products.push(product);
             }
             console.log(i);
-        } catch (error) {
-            appendFileSync("failed.txt", file[i] + "\n", "utf-8");
+        } catch (err) {
+            console.log("ERROR");
+            appendFileSync("failed.txt", file[i] + "\n")
         }
     }
     await writeToDB(products);
 }
 
 async function writeToDB(products: Product[]) {
-    try {
-        await client.connect();
-        for (const product of products) {
-            await client.query("INSERT INTO products (name, price, type) VALUES ($1, $2, $3) on conflict (name) do nothing", Object.values(product));
+    for (const product of products) {
+        try {
+            await prisma.products.create({
+                data: {
+                    name: product.Name,
+                    price: product.Price,
+                    type: product.Type
+                }
+            })
+        } catch (err) {
+            console.log(err);
         }
-        await client.end()
-    } catch (error) {
-        console.error(error);
     }
 }
 
